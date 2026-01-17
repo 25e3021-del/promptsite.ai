@@ -8,15 +8,31 @@ interface PreviewProps {
 
 const Preview: React.FC<PreviewProps> = ({ files }) => {
   const combinedContent = useMemo(() => {
-    // Inject CSS and JS into the HTML structure
     const { html, css, js } = files;
     
-    // We try to find where to inject styles and scripts
+    // Improved injection logic to handle varying HTML structures
     let srcDoc = html;
     
-    // Simple injection if tags are missing, or replacement if they exist
-    const styleTag = `<style>${css}</style>`;
-    const scriptTag = `<script>${js}</script>`;
+    const styleTag = `
+      <style>
+        ${css}
+        /* Studio Reset */
+        body { margin: 0; padding: 0; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.1); border-radius: 10px; }
+      </style>`;
+      
+    const scriptTag = `
+      <script>
+        window.onerror = function(msg, url, line) {
+          console.error("Studio Runtime Error: " + msg + " (line " + line + ")");
+        };
+        try {
+          ${js}
+        } catch(e) {
+          console.error("JS Execution Failed:", e);
+        }
+      </script>`;
 
     if (srcDoc.includes('</head>')) {
       srcDoc = srcDoc.replace('</head>', `${styleTag}</head>`);
@@ -34,12 +50,12 @@ const Preview: React.FC<PreviewProps> = ({ files }) => {
   }, [files]);
 
   return (
-    <div className="flex-1 bg-white h-full relative">
+    <div className="w-full h-full bg-white relative">
       <iframe
-        title="Live Preview"
+        title="Studio Preview"
         srcDoc={combinedContent}
         className="w-full h-full border-none"
-        sandbox="allow-scripts allow-modals allow-forms"
+        sandbox="allow-scripts allow-modals allow-forms allow-popups"
       />
     </div>
   );

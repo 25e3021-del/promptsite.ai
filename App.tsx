@@ -1,345 +1,281 @@
-import React, { useState, useCallback, useEffect } from 'react';
+
+import React, { useState, useEffect, useRef } from 'react';
 import { 
-  Zap, 
-  Code2, 
-  Eye, 
-  Download, 
-  RotateCcw, 
-  History, 
-  Layout, 
-  Monitor, 
-  Copy,
-  Plus,
-  Trash2,
-  ChevronRight,
-  Globe,
-  AlertTriangle,
-  ExternalLink,
-  RefreshCw
+  Zap, Code2, Eye, Download, History, Layout, Monitor, Copy, 
+  Trash2, ChevronRight, Globe, AlertTriangle, RefreshCw, 
+  Image as ImageIcon, Sliders, X, Smartphone, Tablet, Laptop,
+  Upload, Sparkles, Wand2, Settings2
 } from 'lucide-react';
-import { WebsiteFiles, ActiveTab, HistoryItem, TemplateType } from './types';
-import { generateWebsite } from './services/geminiService';
+import { WebsiteFiles, ActiveTab, HistoryItem, TemplateType, ModelConfig } from './types';
+import { generateWebsite, generateImagePlaceholder } from './services/geminiService';
 import Editor from './components/Editor';
 import Preview from './components/Preview';
 
 const App: React.FC = () => {
   const [prompt, setPrompt] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [errorInfo, setErrorInfo] = useState<{message: string, isQuota: boolean, isDaily: boolean} | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [attachedImage, setAttachedImage] = useState<string | null>(null);
   const [files, setFiles] = useState<WebsiteFiles>({
-    html: '<!-- Click Generate to see magic happen! -->',
+    html: '<!-- Use the Studio to generate a site -->',
     css: '/* Styles will appear here */',
     js: '// Script will appear here'
   });
+  
+  const [studioConfig, setStudioConfig] = useState<ModelConfig>({
+    model: 'gemini-3-flash-preview',
+    temperature: 0.7,
+    systemInstruction: ''
+  });
+
   const [activeTab, setActiveTab] = useState<ActiveTab>('preview');
+  const [previewDevice, setPreviewDevice] = useState<'mobile' | 'tablet' | 'desktop'>('desktop');
   const [history, setHistory] = useState<HistoryItem[]>([]);
-  const [showHistory, setShowHistory] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    const saved = localStorage.getItem('prompt_site_history');
-    if (saved) {
-      try {
-        setHistory(JSON.parse(saved));
-      } catch (e) {
-        console.error("Failed to load history", e);
-      }
-    }
+    const saved = localStorage.getItem('prompt_site_studio_history');
+    if (saved) setHistory(JSON.parse(saved));
   }, []);
 
-  useEffect(() => {
-    localStorage.setItem('prompt_site_history', JSON.stringify(history));
-  }, [history]);
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => setAttachedImage(reader.result as string);
+      reader.readAsDataURL(file);
+    }
+  };
 
-  const handleGenerate = async (targetPrompt?: string) => {
-    const p = targetPrompt || prompt;
-    if (!p.trim()) return;
-
+  const handleGenerate = async () => {
+    if (!prompt.trim() && !attachedImage) return;
     setIsLoading(true);
-    setErrorInfo(null);
+    setError(null);
     try {
-      const generated = await generateWebsite(p);
+      const generated = await generateWebsite(prompt, studioConfig, attachedImage || undefined);
       setFiles(generated);
-      
-      const newHistoryItem: HistoryItem = {
+      const newHistory: HistoryItem = {
         id: Date.now().toString(),
-        prompt: p,
+        prompt: prompt || 'Vision Task',
         timestamp: Date.now(),
-        files: generated
+        files: generated,
+        imagePreview: attachedImage || undefined
       };
-      setHistory(prev => [newHistoryItem, ...prev].slice(0, 20));
+      setHistory(prev => [newHistory, ...prev].slice(0, 10));
+      localStorage.setItem('prompt_site_studio_history', JSON.stringify([newHistory, ...history].slice(0, 10)));
       setActiveTab('preview');
     } catch (err: any) {
-      const msg = err instanceof Error ? err.message : String(err);
-      const isQuota = msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('quota');
-      const isDaily = msg.toLowerCase().includes('limit') || msg.toLowerCase().includes('exhausted');
-      setErrorInfo({ message: msg, isQuota, isDaily });
+      setError(err.message || "Studio experienced a glitch. Try reducing complexity.");
     } finally {
       setIsLoading(false);
     }
   };
 
-  const handleFileChange = (key: keyof WebsiteFiles, value: string) => {
-    setFiles(prev => ({ ...prev, [key]: value }));
-  };
-
   const handleDownload = async () => {
-    try {
-      // @ts-ignore
-      const JSZip = (await import('https://cdn.skypack.dev/jszip')).default;
-      const zip = new JSZip();
-      zip.file("index.html", files.html);
-      zip.file("styles.css", files.css);
-      zip.file("script.js", files.js);
-      const content = await zip.generateAsync({ type: "blob" });
-      const url = URL.createObjectURL(content);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "website-project.zip";
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (err) {
-      console.error("ZIP Generation Failed:", err);
-    }
-  };
-
-  const handleCopyCode = () => {
-    const textToCopy = 
-      activeTab === 'html' ? files.html :
-      activeTab === 'css' ? files.css :
-      activeTab === 'js' ? files.js : 
-      `HTML:\n${files.html}\n\nCSS:\n${files.css}\n\nJS:\n${files.js}`;
-    
-    navigator.clipboard.writeText(textToCopy);
-  };
-
-  const loadFromHistory = (item: HistoryItem) => {
-    setFiles(item.files);
-    setPrompt(item.prompt);
-    setActiveTab('preview');
-    setShowHistory(false);
-    setErrorInfo(null);
-  };
-
-  const useTemplate = (template: TemplateType) => {
-    let templatePrompt = "";
-    switch(template) {
-      case TemplateType.LANDING: templatePrompt = "A high-conversion landing page for a modern cloud kitchen service with a hero section, menu showcase, and contact form."; break;
-      case TemplateType.PORTFOLIO: templatePrompt = "A sleek, minimalist portfolio for a senior product designer with a dark theme, case study grid, and subtle entrance animations."; break;
-      case TemplateType.SAAS: templatePrompt = "A feature-rich SaaS marketing page with a pricing table, testimonial carousel, and interactive feature highlights."; break;
-      case TemplateType.ECOMMERCE: templatePrompt = "An elegant e-commerce storefront for a high-end sustainable fashion brand with product filters and a responsive cart sidebar."; break;
-    }
-    setPrompt(templatePrompt);
-    handleGenerate(templatePrompt);
+    const JSZip = (await import('https://cdn.skypack.dev/jszip')).default;
+    const zip = new JSZip();
+    zip.file("index.html", files.html);
+    zip.file("styles.css", files.css);
+    zip.file("script.js", files.js);
+    const blob = await zip.generateAsync({ type: "blob" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "studio-project.zip";
+    a.click();
   };
 
   return (
-    <div className="flex h-screen w-full bg-[#0f172a] overflow-hidden text-slate-200">
+    <div className="flex h-screen w-full bg-[#09090b] text-zinc-100 overflow-hidden font-sans">
       
-      {/* Sidebar / Prompt Panel */}
-      <div className="w-1/3 min-w-[380px] border-r border-slate-800 flex flex-col bg-[#0f172a] shadow-xl z-20">
-        
-        {/* Header */}
-        <div className="p-6 border-b border-slate-800 flex items-center justify-between">
+      {/* --- Left Sidebar: Studio Controls --- */}
+      <aside className="w-80 border-r border-zinc-800 flex flex-col bg-[#09090b]">
+        <div className="p-4 border-b border-zinc-800 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-              <Zap size={20} className="text-white fill-white" />
-            </div>
-            <h1 className="text-xl font-bold tracking-tight">PromptSite <span className="text-blue-500">AI</span></h1>
+            <Sparkles className="text-blue-500 fill-blue-500/20" size={20} />
+            <h1 className="font-bold tracking-tight text-sm">GEMINI STUDIO</h1>
           </div>
-          <button 
-            onClick={() => setShowHistory(!showHistory)}
-            className={`p-2 rounded-lg transition-colors ${showHistory ? 'bg-blue-600 text-white' : 'hover:bg-slate-800 text-slate-400'}`}
-          >
-            <History size={18} />
+          <button onClick={() => setShowAdvanced(!showAdvanced)} className={`p-1.5 rounded-md transition-colors ${showAdvanced ? 'bg-blue-600/20 text-blue-400' : 'hover:bg-zinc-800 text-zinc-500'}`}>
+            <Settings2 size={16} />
           </button>
         </div>
 
-        {/* Content Area */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-8 scroll-smooth">
-          {showHistory ? (
-            <div className="space-y-4 animate-in fade-in slide-in-from-left-4 duration-300">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold uppercase text-slate-500 tracking-wider">Recent Creations</h3>
+        <div className="flex-1 overflow-y-auto p-4 space-y-6">
+          {/* Prompt Section */}
+          <div className="space-y-3">
+            <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Design Intent</label>
+            <div className="relative group">
+              <textarea
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                placeholder="Describe your vision..."
+                className="w-full h-32 bg-zinc-900 border border-zinc-800 rounded-lg p-3 text-sm focus:ring-1 focus:ring-blue-500 outline-none transition-all resize-none placeholder:text-zinc-600"
+              />
+              <div className="absolute bottom-2 right-2 flex gap-1">
                 <button 
-                  onClick={() => {
-                    if(confirm("Clear all history?")) setHistory([]);
-                  }} 
-                  className="text-xs text-red-400 hover:text-red-300 flex items-center gap-1"
+                  onClick={() => fileInputRef.current?.click()}
+                  className={`p-1.5 rounded-md ${attachedImage ? 'text-blue-500 bg-blue-500/10' : 'text-zinc-500 hover:text-zinc-300'}`}
                 >
-                  <Trash2 size={12} /> Clear
+                  <ImageIcon size={14} />
                 </button>
+                <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} />
               </div>
-              {history.length === 0 ? (
-                <div className="text-center py-12 opacity-50 space-y-2">
-                  <RotateCcw size={32} className="mx-auto" />
-                  <p className="text-sm">No history yet</p>
-                </div>
-              ) : (
-                history.map((item) => (
-                  <button 
-                    key={item.id}
-                    onClick={() => loadFromHistory(item)}
-                    className="w-full text-left p-3 rounded-xl bg-slate-800/50 border border-slate-700 hover:border-blue-500/50 transition-all group"
-                  >
-                    <p className="text-sm line-clamp-2 text-slate-300 group-hover:text-white transition-colors">
-                      {item.prompt}
-                    </p>
-                    <div className="mt-2 flex items-center justify-between text-[10px] text-slate-500 font-mono">
-                      <span>{new Date(item.timestamp).toLocaleString()}</span>
-                      <ChevronRight size={14} className="group-hover:translate-x-1 transition-transform" />
-                    </div>
-                  </button>
-                ))
-              )}
             </div>
-          ) : (
-            <>
-              {/* Prompt Input */}
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <label className="text-sm font-semibold uppercase text-slate-500 tracking-wider">What are we building?</label>
-                  <span className="text-xs text-slate-600 font-mono">{prompt.length}/500</span>
-                </div>
-                <textarea
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
-                  placeholder="Describe your website project..."
-                  className="w-full h-40 bg-slate-900 border border-slate-700 rounded-2xl p-4 text-slate-300 focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-all outline-none resize-none leading-relaxed"
-                />
-
-                {errorInfo && (
-                  <div className="p-4 bg-red-900/20 border border-red-500/30 rounded-2xl space-y-3 animate-in fade-in slide-in-from-top-2 duration-300">
-                    <div className="flex items-start gap-3">
-                      <AlertTriangle size={18} className="text-red-400 shrink-0 mt-0.5" />
-                      <div className="space-y-2">
-                        <p className="text-xs text-red-200 leading-relaxed font-bold">
-                          {errorInfo.isQuota ? (errorInfo.isDaily ? "Service Limit Reached" : "Busy") : "Generation Error"}
-                        </p>
-                        <p className="text-[11px] text-red-300/80 leading-relaxed italic">
-                          {errorInfo.isQuota 
-                            ? "The background service quota has been hit. If this is the daily limit, it resets at midnight PT. Otherwise, try again in 60 seconds." 
-                            : errorInfo.message}
-                        </p>
-                      </div>
-                    </div>
-                    
-                    <button 
-                      onClick={() => handleGenerate()}
-                      className="w-full py-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-200 rounded-xl text-[10px] font-bold flex items-center justify-center gap-1.5 transition-all"
-                    >
-                      <RefreshCw size={12} /> Try Again
-                    </button>
-                  </div>
-                )}
-
-                <button
-                  onClick={() => handleGenerate()}
-                  disabled={isLoading || !prompt.trim()}
-                  className="w-full py-4 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-800 disabled:text-slate-600 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all active:scale-[0.98] shadow-lg shadow-blue-900/20"
+            
+            {attachedImage && (
+              <div className="relative group rounded-lg overflow-hidden border border-zinc-800">
+                <img src={attachedImage} className="w-full h-20 object-cover opacity-60" />
+                <button 
+                  onClick={() => setAttachedImage(null)}
+                  className="absolute top-1 right-1 p-1 bg-black/50 rounded-full hover:bg-black"
                 >
-                  {isLoading ? (
-                    <>
-                      <div className="w-5 h-5 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-                      <span>Processing...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Zap size={20} className="fill-white" />
-                      <span>Generate Website</span>
-                    </>
-                  )}
+                  <X size={10} />
                 </button>
-              </div>
-
-              {/* Templates */}
-              <div className="space-y-4">
-                <h3 className="text-sm font-semibold uppercase text-slate-500 tracking-wider">Templates</h3>
-                <div className="grid grid-cols-2 gap-3">
-                  {Object.values(TemplateType).map((t) => (
-                    <button
-                      key={t}
-                      onClick={() => useTemplate(t)}
-                      disabled={isLoading}
-                      className="p-3 bg-slate-900/50 border border-slate-800 rounded-xl hover:bg-slate-800 hover:border-slate-600 transition-all flex flex-col gap-2 group disabled:opacity-50"
-                    >
-                      <Layout size={18} className="text-blue-500" />
-                      <span className="text-[11px] font-medium">{t}</span>
-                    </button>
-                  ))}
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <span className="text-[9px] font-bold uppercase bg-black/60 px-2 py-1 rounded">Visual Context Active</span>
                 </div>
               </div>
-            </>
+            )}
+          </div>
+
+          {/* Parameters Panel */}
+          {showAdvanced && (
+            <div className="space-y-4 p-3 bg-zinc-900/50 rounded-lg border border-zinc-800 animate-in fade-in slide-in-from-top-2 duration-200">
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold text-zinc-400 uppercase">Model</label>
+                <select 
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded p-1.5 text-xs"
+                  value={studioConfig.model}
+                  onChange={e => setStudioConfig({...studioConfig, model: e.target.value as any})}
+                >
+                  <option value="gemini-3-flash-preview">Gemini 3 Flash (Fast)</option>
+                  <option value="gemini-3-pro-preview">Gemini 3 Pro (Precise)</option>
+                </select>
+              </div>
+              <div className="space-y-2">
+                <div className="flex justify-between">
+                  <label className="text-[10px] font-bold text-zinc-400 uppercase">Temperature</label>
+                  <span className="text-[10px] font-mono">{studioConfig.temperature}</span>
+                </div>
+                <input 
+                  type="range" min="0" max="1" step="0.1" 
+                  className="w-full accent-blue-500" 
+                  value={studioConfig.temperature}
+                  onChange={e => setStudioConfig({...studioConfig, temperature: parseFloat(e.target.value)})}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold text-zinc-400 uppercase">System Instructions</label>
+                <textarea 
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded p-1.5 text-xs h-20 resize-none font-mono"
+                  placeholder="e.g. Always use Glassmorphism..."
+                  value={studioConfig.systemInstruction}
+                  onChange={e => setStudioConfig({...studioConfig, systemInstruction: e.target.value})}
+                />
+              </div>
+            </div>
           )}
-        </div>
 
-        <div className="p-6 border-t border-slate-800 text-[10px] text-slate-600 font-mono text-center flex flex-col gap-1">
-          <span>Gemini 3 Flash • Auto-managed Quota</span>
-          <span className="opacity-50">Resets daily at 12:00 AM PT</span>
-        </div>
-      </div>
+          <button
+            onClick={handleGenerate}
+            disabled={isLoading || (!prompt.trim() && !attachedImage)}
+            className="w-full py-3 bg-blue-600 hover:bg-blue-500 disabled:bg-zinc-800 disabled:text-zinc-600 rounded-lg font-bold text-sm flex items-center justify-center gap-2 transition-all shadow-lg shadow-blue-900/10 group"
+          >
+            {isLoading ? (
+              <RefreshCw className="animate-spin" size={16} />
+            ) : (
+              <>
+                <Wand2 size={16} className="group-hover:rotate-12 transition-transform" />
+                <span>Run Studio</span>
+              </>
+            )}
+          </button>
 
-      {/* Main Preview Area */}
-      <div className="flex-1 flex flex-col bg-slate-950 relative">
-        <div className="h-14 bg-slate-900/50 border-b border-slate-800 px-6 flex items-center justify-between">
-          <div className="flex items-center gap-1 h-full">
+          {/* History */}
+          <div className="space-y-3">
+            <label className="text-[10px] font-bold uppercase tracking-widest text-zinc-500">Timeline</label>
+            <div className="space-y-2">
+              {history.map(item => (
+                <button 
+                  key={item.id}
+                  onClick={() => {setFiles(item.files); setPrompt(item.prompt);}}
+                  className="w-full p-2.5 rounded-lg bg-zinc-900/30 border border-zinc-800/50 hover:border-blue-500/30 transition-all text-left group"
+                >
+                  <p className="text-[11px] font-medium text-zinc-400 truncate group-hover:text-zinc-200">{item.prompt}</p>
+                  <span className="text-[9px] text-zinc-600 font-mono">{new Date(item.timestamp).toLocaleTimeString()}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      {/* --- Main Workspace --- */}
+      <main className="flex-1 flex flex-col bg-[#0c0c0e]">
+        
+        {/* Workspace Toolbar */}
+        <nav className="h-12 border-b border-zinc-800 px-4 flex items-center justify-between">
+          <div className="flex h-full">
             {[
-              { id: 'preview', label: 'Preview', icon: Eye },
-              { id: 'html', label: 'index.html', icon: Globe },
-              { id: 'css', label: 'styles.css', icon: Code2 },
-              { id: 'js', label: 'script.js', icon: Code2 },
-            ].map((tab) => (
+              { id: 'preview', icon: Eye, label: 'Live' },
+              { id: 'html', icon: Globe, label: 'HTML' },
+              { id: 'css', icon: Code2, label: 'CSS' },
+              { id: 'js', icon: Zap, label: 'JS' }
+            ].map(tab => (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id as ActiveTab)}
-                className={`h-full px-4 flex items-center gap-2 text-sm font-medium transition-all relative ${
-                  activeTab === tab.id 
-                    ? 'text-white' 
-                    : 'text-slate-500 hover:text-slate-300'
+                onClick={() => setActiveTab(tab.id as any)}
+                className={`flex items-center gap-2 px-4 text-xs font-semibold transition-all relative ${
+                  activeTab === tab.id ? 'text-blue-400' : 'text-zinc-500 hover:text-zinc-300'
                 }`}
               >
-                <tab.icon size={16} />
-                <span className="hidden sm:inline">{tab.label}</span>
-                {activeTab === tab.id && (
-                  <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-500 rounded-full" />
-                )}
+                <tab.icon size={14} />
+                {tab.label}
+                {activeTab === tab.id && <div className="absolute bottom-0 left-4 right-4 h-0.5 bg-blue-500" />}
               </button>
             ))}
           </div>
 
-          <div className="flex items-center gap-3">
-            <button 
-              onClick={handleCopyCode}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-medium transition-all"
-            >
-              <Copy size={14} /> <span className="hidden md:inline">Copy</span>
-            </button>
-            <button 
-              onClick={handleDownload}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-xs font-medium transition-all shadow-lg"
-            >
-              <Download size={14} /> <span className="hidden md:inline">Export ZIP</span>
-            </button>
+          <div className="flex items-center gap-4">
+            {activeTab === 'preview' && (
+              <div className="flex items-center bg-zinc-900 rounded-lg p-1 gap-1 border border-zinc-800">
+                <button onClick={() => setPreviewDevice('mobile')} className={`p-1.5 rounded ${previewDevice === 'mobile' ? 'bg-zinc-800 text-blue-400' : 'text-zinc-600'}`}><Smartphone size={14} /></button>
+                <button onClick={() => setPreviewDevice('tablet')} className={`p-1.5 rounded ${previewDevice === 'tablet' ? 'bg-zinc-800 text-blue-400' : 'text-zinc-600'}`}><Tablet size={14} /></button>
+                <button onClick={() => setPreviewDevice('desktop')} className={`p-1.5 rounded ${previewDevice === 'desktop' ? 'bg-zinc-800 text-blue-400' : 'text-zinc-600'}`}><Laptop size={14} /></button>
+              </div>
+            )}
+            <div className="flex gap-2">
+              <button onClick={handleDownload} className="flex items-center gap-2 px-3 py-1.5 bg-zinc-100 text-zinc-950 rounded-md text-[11px] font-bold hover:bg-white transition-all">
+                <Download size={14} /> EXPORT
+              </button>
+            </div>
           </div>
-        </div>
+        </nav>
 
-        <div className="flex-1 overflow-hidden relative">
+        {/* Content Area */}
+        <div className="flex-1 relative overflow-hidden">
           {activeTab === 'preview' ? (
-            <Preview files={files} />
+            <div className="w-full h-full flex items-center justify-center bg-zinc-950 p-8">
+              <div className={`transition-all duration-500 bg-white shadow-2xl rounded-sm overflow-hidden ${
+                previewDevice === 'mobile' ? 'w-[375px] h-[667px]' : 
+                previewDevice === 'tablet' ? 'w-[768px] h-[1024px]' : 'w-full h-full'
+              }`}>
+                <Preview files={files} />
+              </div>
+            </div>
           ) : (
             <div className="h-full">
-              {activeTab === 'html' && (
-                <Editor value={files.html} language="html" onChange={(val) => handleFileChange('html', val)} />
-              )}
-              {activeTab === 'css' && (
-                <Editor value={files.css} language="css" onChange={(val) => handleFileChange('css', val)} />
-              )}
-              {activeTab === 'js' && (
-                <Editor value={files.js} language="javascript" onChange={(val) => handleFileChange('js', val)} />
-              )}
+              <Editor 
+                value={activeTab === 'html' ? files.html : activeTab === 'css' ? files.css : files.js} 
+                language={activeTab === 'js' ? 'javascript' : activeTab as any}
+                onChange={(val) => setFiles({...files, [activeTab]: val})}
+              />
             </div>
           )}
         </div>
-      </div>
+      </main>
     </div>
   );
 };
