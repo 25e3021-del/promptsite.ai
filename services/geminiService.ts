@@ -1,4 +1,3 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { WebsiteFiles } from "../types";
 
@@ -26,11 +25,8 @@ async function fetchWithRetry(fn: () => Promise<any>, maxRetries = 2): Promise<a
       const errorMsg = error?.message || '';
       const isQuotaError = errorMsg.includes('429') || errorMsg.includes('RESOURCE_EXHAUSTED');
       
-      // If it's a rate limit (RPM), we retry after a short wait.
-      // If it's a daily limit (RPD), retry won't help today.
       if (isQuotaError && i < maxRetries - 1) {
         const waitTime = Math.pow(3, i) * 2000 + Math.random() * 1000;
-        console.warn(`Quota/Rate limit hit. Retrying in ${Math.round(waitTime)}ms...`);
         await sleep(waitTime);
         continue;
       }
@@ -41,12 +37,8 @@ async function fetchWithRetry(fn: () => Promise<any>, maxRetries = 2): Promise<a
 }
 
 export const generateWebsite = async (prompt: string): Promise<WebsiteFiles> => {
+  // Use environment API key exclusively
   const apiKey = process.env.API_KEY;
-  
-  if (!apiKey || apiKey === "undefined") {
-    throw new Error("API Key is missing. Use the 'Settings' icon to add your own key for higher limits.");
-  }
-
   const ai = new GoogleGenAI({ apiKey });
 
   return fetchWithRetry(async () => {
@@ -70,7 +62,7 @@ export const generateWebsite = async (prompt: string): Promise<WebsiteFiles> => 
       });
 
       if (!response.text) {
-        throw new Error("The AI returned an empty response. Please try a different prompt.");
+        throw new Error("No code was returned. Please try a different prompt.");
       }
 
       const result = JSON.parse(response.text.trim());
@@ -80,9 +72,8 @@ export const generateWebsite = async (prompt: string): Promise<WebsiteFiles> => 
         js: result.js || '',
       };
     } catch (err: any) {
-      // Re-throw with a cleaner message if it's a standard quota error
       if (err?.message?.includes('429') || err?.message?.includes('RESOURCE_EXHAUSTED')) {
-        throw new Error("Quota exceeded. Free tier resets daily at 12:00 AM PT. Try again tomorrow or use your own API key.");
+        throw new Error("Quota exceeded. The free tier resets at midnight PT. Please wait or try again later.");
       }
       throw err;
     }

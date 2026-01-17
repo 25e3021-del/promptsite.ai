@@ -1,4 +1,3 @@
-
 import React, { useState, useCallback, useEffect } from 'react';
 import { 
   Zap, 
@@ -14,7 +13,6 @@ import {
   Trash2,
   ChevronRight,
   Globe,
-  Settings,
   AlertTriangle,
   ExternalLink,
   RefreshCw
@@ -37,7 +35,6 @@ const App: React.FC = () => {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [showHistory, setShowHistory] = useState(false);
 
-  // Load history from localStorage
   useEffect(() => {
     const saved = localStorage.getItem('prompt_site_history');
     if (saved) {
@@ -49,19 +46,9 @@ const App: React.FC = () => {
     }
   }, []);
 
-  // Save history to localStorage
   useEffect(() => {
     localStorage.setItem('prompt_site_history', JSON.stringify(history));
   }, [history]);
-
-  const handleOpenKeySettings = async () => {
-    if (window.aistudio?.openSelectKey) {
-      await window.aistudio.openSelectKey();
-      setErrorInfo(null); 
-    } else {
-      alert("API Key management is only available in the AI Studio environment.");
-    }
-  };
 
   const handleGenerate = async (targetPrompt?: string) => {
     const p = targetPrompt || prompt;
@@ -112,7 +99,6 @@ const App: React.FC = () => {
       URL.revokeObjectURL(url);
     } catch (err) {
       console.error("ZIP Generation Failed:", err);
-      alert("Failed to generate ZIP. You can still copy the code manually.");
     }
   };
 
@@ -124,7 +110,6 @@ const App: React.FC = () => {
       `HTML:\n${files.html}\n\nCSS:\n${files.css}\n\nJS:\n${files.js}`;
     
     navigator.clipboard.writeText(textToCopy);
-    alert('Code copied to clipboard!');
   };
 
   const loadFromHistory = (item: HistoryItem) => {
@@ -161,21 +146,12 @@ const App: React.FC = () => {
             </div>
             <h1 className="text-xl font-bold tracking-tight">PromptSite <span className="text-blue-500">AI</span></h1>
           </div>
-          <div className="flex items-center gap-2">
-            <button 
-              onClick={handleOpenKeySettings}
-              className="p-2 rounded-lg hover:bg-slate-800 text-slate-400 transition-colors"
-              title="API Key Settings"
-            >
-              <Settings size={18} />
-            </button>
-            <button 
-              onClick={() => setShowHistory(!showHistory)}
-              className={`p-2 rounded-lg transition-colors ${showHistory ? 'bg-blue-600 text-white' : 'hover:bg-slate-800 text-slate-400'}`}
-            >
-              <History size={18} />
-            </button>
-          </div>
+          <button 
+            onClick={() => setShowHistory(!showHistory)}
+            className={`p-2 rounded-lg transition-colors ${showHistory ? 'bg-blue-600 text-white' : 'hover:bg-slate-800 text-slate-400'}`}
+          >
+            <History size={18} />
+          </button>
         </div>
 
         {/* Content Area */}
@@ -227,7 +203,7 @@ const App: React.FC = () => {
                 <textarea
                   value={prompt}
                   onChange={(e) => setPrompt(e.target.value)}
-                  placeholder="Describe your website..."
+                  placeholder="Describe your website project..."
                   className="w-full h-40 bg-slate-900 border border-slate-700 rounded-2xl p-4 text-slate-300 focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-all outline-none resize-none leading-relaxed"
                 />
 
@@ -237,40 +213,22 @@ const App: React.FC = () => {
                       <AlertTriangle size={18} className="text-red-400 shrink-0 mt-0.5" />
                       <div className="space-y-2">
                         <p className="text-xs text-red-200 leading-relaxed font-bold">
-                          {errorInfo.isQuota ? (errorInfo.isDaily ? "Daily Quota Exhausted" : "Rate Limit Hit") : "Generation Error"}
+                          {errorInfo.isQuota ? (errorInfo.isDaily ? "Service Limit Reached" : "Busy") : "Generation Error"}
                         </p>
                         <p className="text-[11px] text-red-300/80 leading-relaxed italic">
                           {errorInfo.isQuota 
-                            ? "The free tier has limits. If this is a daily limit, it will reset at midnight PT. If it's a minute limit, try again in 60 seconds." 
+                            ? "The background service quota has been hit. If this is the daily limit, it resets at midnight PT. Otherwise, try again in 60 seconds." 
                             : errorInfo.message}
                         </p>
                       </div>
                     </div>
                     
-                    <div className="flex flex-col gap-2 pt-1 border-t border-red-500/10">
-                      <div className="grid grid-cols-2 gap-2">
-                        <button 
-                          onClick={() => handleGenerate()}
-                          className="py-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-200 rounded-xl text-[10px] font-bold flex items-center justify-center gap-1.5 transition-all"
-                        >
-                          <RefreshCw size={12} /> Retry Now
-                        </button>
-                        <button 
-                          onClick={handleOpenKeySettings}
-                          className="py-2 bg-white/5 hover:bg-white/10 text-white rounded-xl text-[10px] font-bold flex items-center justify-center gap-1.5 transition-all"
-                        >
-                          <Settings size={12} /> Change Key
-                        </button>
-                      </div>
-                      <a 
-                        href="https://ai.google.dev/gemini-api/docs/billing" 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="text-[9px] text-slate-500 hover:text-slate-400 flex items-center justify-center gap-1 transition-colors underline"
-                      >
-                        Learn about free tier limits <ExternalLink size={8} />
-                      </a>
-                    </div>
+                    <button 
+                      onClick={() => handleGenerate()}
+                      className="w-full py-2 bg-blue-600/20 hover:bg-blue-600/30 text-blue-200 rounded-xl text-[10px] font-bold flex items-center justify-center gap-1.5 transition-all"
+                    >
+                      <RefreshCw size={12} /> Try Again
+                    </button>
                   </div>
                 )}
 
@@ -315,7 +273,7 @@ const App: React.FC = () => {
         </div>
 
         <div className="p-6 border-t border-slate-800 text-[10px] text-slate-600 font-mono text-center flex flex-col gap-1">
-          <span>Gemini 3 Flash • Daily Quota Managed</span>
+          <span>Gemini 3 Flash • Auto-managed Quota</span>
           <span className="opacity-50">Resets daily at 12:00 AM PT</span>
         </div>
       </div>
@@ -378,18 +336,6 @@ const App: React.FC = () => {
               {activeTab === 'js' && (
                 <Editor value={files.js} language="javascript" onChange={(val) => handleFileChange('js', val)} />
               )}
-            </div>
-          )}
-
-          {activeTab === 'preview' && files.html.length > 100 && (
-            <div className="absolute bottom-6 right-6">
-              <button 
-                onClick={() => handleGenerate()}
-                disabled={isLoading}
-                className="w-12 h-12 bg-white text-slate-900 rounded-full shadow-2xl flex items-center justify-center hover:scale-110 active:scale-95 transition-all group disabled:opacity-50"
-              >
-                <RotateCcw size={20} className={isLoading ? 'animate-spin' : 'group-hover:rotate-180 transition-transform duration-500'} />
-              </button>
             </div>
           )}
         </div>
