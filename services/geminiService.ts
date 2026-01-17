@@ -2,8 +2,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { WebsiteFiles } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-
 const SYSTEM_INSTRUCTION = `
 You are an expert full-stack web developer. Your task is to generate complete, production-ready, responsive, and accessible website code based on user prompts.
 Guidelines:
@@ -17,6 +15,14 @@ Guidelines:
 `;
 
 export const generateWebsite = async (prompt: string): Promise<WebsiteFiles> => {
+  const apiKey = process.env.API_KEY;
+  
+  if (!apiKey || apiKey === "undefined") {
+    throw new Error("API Key is missing. Please set the API_KEY environment variable in your deployment settings.");
+  }
+
+  const ai = new GoogleGenAI({ apiKey });
+
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
@@ -36,7 +42,11 @@ export const generateWebsite = async (prompt: string): Promise<WebsiteFiles> => 
       },
     });
 
-    const result = JSON.parse(response.text || "{}");
+    if (!response.text) {
+      throw new Error("The AI returned an empty response.");
+    }
+
+    const result = JSON.parse(response.text.trim());
     return {
       html: result.html || '',
       css: result.css || '',
@@ -44,6 +54,9 @@ export const generateWebsite = async (prompt: string): Promise<WebsiteFiles> => 
     };
   } catch (error) {
     console.error("Gemini Generation Error:", error);
+    if (error instanceof Error) {
+       throw new Error(`Generation failed: ${error.message}`);
+    }
     throw new Error("Failed to generate website code. Please check your prompt and try again.");
   }
 };
