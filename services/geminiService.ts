@@ -14,49 +14,77 @@ Guidelines:
 7. Images: Use high-quality placeholders from Unsplash (via https://picsum.photos/...) if images are needed.
 `;
 
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+async function fetchWithRetry(fn: () => Promise<any>, maxRetries = 2): Promise<any> {
+  let lastError: any;
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await fn();
+    } catch (error: any) {
+      lastError = error;
+      const errorMsg = error?.message || '';
+      const isQuotaError = errorMsg.includes('429') || errorMsg.includes('RESOURCE_EXHAUSTED');
+      
+      // If it's a rate limit (RPM), we retry after a short wait.
+      // If it's a daily limit (RPD), retry won't help today.
+      if (isQuotaError && i < maxRetries - 1) {
+        const waitTime = Math.pow(3, i) * 2000 + Math.random() * 1000;
+        console.warn(`Quota/Rate limit hit. Retrying in ${Math.round(waitTime)}ms...`);
+        await sleep(waitTime);
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw lastError;
+}
+
 export const generateWebsite = async (prompt: string): Promise<WebsiteFiles> => {
   const apiKey = process.env.API_KEY;
   
   if (!apiKey || apiKey === "undefined") {
-    throw new Error("API Key is missing. Please set the API_KEY environment variable in your deployment settings.");
+    throw new Error("API Key is missing. Use the 'Settings' icon to add your own key for higher limits.");
   }
 
   const ai = new GoogleGenAI({ apiKey });
 
-  try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: `Generate a full website for: ${prompt}`,
-      config: {
-        systemInstruction: SYSTEM_INSTRUCTION,
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            html: { type: Type.STRING, description: 'Complete index.html content' },
-            css: { type: Type.STRING, description: 'Complete styles.css content' },
-            js: { type: Type.STRING, description: 'Complete script.js content' },
+  return fetchWithRetry(async () => {
+    try {
+      const response = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: `Generate a full website for: ${prompt}`,
+        config: {
+          systemInstruction: SYSTEM_INSTRUCTION,
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              html: { type: Type.STRING, description: 'Complete index.html content' },
+              css: { type: Type.STRING, description: 'Complete styles.css content' },
+              js: { type: Type.STRING, description: 'Complete script.js content' },
+            },
+            required: ["html", "css", "js"],
           },
-          required: ["html", "css", "js"],
         },
-      },
-    });
+      });
 
-    if (!response.text) {
-      throw new Error("The AI returned an empty response.");
-    }
+      if (!response.text) {
+        throw new Error("The AI returned an empty response. Please try a different prompt.");
+      }
 
-    const result = JSON.parse(response.text.trim());
-    return {
-      html: result.html || '',
-      css: result.css || '',
-      js: result.js || '',
-    };
-  } catch (error) {
-    console.error("Gemini Generation Error:", error);
-    if (error instanceof Error) {
-       throw new Error(`Generation failed: ${error.message}`);
+      const result = JSON.parse(response.text.trim());
+      return {
+        html: result.html || '',
+        css: result.css || '',
+        js: result.js || '',
+      };
+    } catch (err: any) {
+      // Re-throw with a cleaner message if it's a standard quota error
+      if (err?.message?.includes('429') || err?.message?.includes('RESOURCE_EXHAUSTED')) {
+        throw new Error("Quota exceeded. Free tier resets daily at 12:00 AM PT. Try again tomorrow or use your own API key.");
+      }
+      throw err;
     }
-    throw new Error("Failed to generate website code. Please check your prompt and try again.");
-  }
+  });
 };
